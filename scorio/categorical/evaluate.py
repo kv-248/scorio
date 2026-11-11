@@ -16,7 +16,9 @@ Pipeline
 
 from __future__ import annotations
 
+import itertools
 import logging
+import math
 from pathlib import Path
 
 import numpy as np
@@ -26,6 +28,7 @@ from scorio.categorical._util import Columns, num_rows, select_rows
 from scorio.categorical.io import load_records
 from scorio.categorical.schemas import _SCHEMA_REGISTRY
 from scorio.categorical.thresholds import (
+    BINARY_SIGNALS,
     Thresholds,
     _classify_signal,
     _get_signal_value,
@@ -89,8 +92,41 @@ def _score_rows(
     return scored
 
 
-def _scores_to_R(scored: list[tuple]) -> tuple[np.ndarray, np.ndarray]:
+def _rubric_floor(schema_entry: dict, thresholds: Thresholds) -> float:
+    """Return the lowest score this schema's classifier can emit.
+
+    Level combinations cover every branch of the registered classifiers.
+    A missing signal uses the same ``"low"`` / ``"0"`` default as
+    :meth:`dict.get` inside those classifiers, so it cannot score below this
+    floor.
+    """
+    signals = schema_entry["signals"]
+    classify_fn = schema_entry["classify"]
+    level_sets = [
+        ("0", "1") if signal_id in BINARY_SIGNALS else ("low", "high")
+        for signal_id in signals
+    ]
+    floor = math.inf
+    for combo in itertools.product(*level_sets):
+        levels = dict(zip(signals, combo, strict=True))
+        *_, score = classify_fn(levels, {}, thresholds)
+        floor = min(floor, float(score))
+    if not math.isfinite(floor):
+        raise ValueError(f"schema {schema_entry['cid']!r} has no finite score")
+    return floor
+
+
+def _scores_to_R(
+    scored: list[tuple],
+    *,
+    floor: float | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
     """Pivot scored ``(problem, trial, score)`` tuples to an integer R matrix.
+
+    Missing ``(problem, trial)`` cells are filled with ``floor`` when it is
+    given, otherwise with the lowest observed score. They are not filled with
+    a literal ``0``, which is not a score of every rubric and would enter
+    ``w`` as a phantom category.
 
     Returns:
         ``(R_int, w)`` where:
@@ -105,9 +141,13 @@ def _scores_to_R(scored: list[tuple]) -> tuple[np.ndarray, np.ndarray]:
     p_idx = {p: i for i, p in enumerate(problems)}
     t_idx = {t: j for j, t in enumerate(trials)}
 
-    # Fill missing (problem, trial) cells with the lowest possible score (0.0
-    # fallback → category 0) rather than dropping problems with uneven trial counts.
-    mat = np.zeros((len(problems), len(trials)), dtype=float)
+    # Keep problems that were not run for every trial. The filler is a real
+    # rubric score, so an uneven panel does not invent a category.
+    if floor is None:
+        floor = min((float(score) for _, _, score in scored), default=0.0)
+    else:
+        floor = float(floor)
+    mat = np.full((len(problems), len(trials)), floor, dtype=float)
     filled = np.zeros(mat.shape, dtype=bool)
     for p, t, s in scored:
         i, j = p_idx[p], t_idx[t]
@@ -175,7 +215,10 @@ def evaluate_schema(
         label = str(group_val)
         try:
             scored = _score_rows(group_columns, schema_entry, thresholds)
-            R_int, w = _scores_to_R(scored)
+            R_int, w = _scores_to_R(
+                scored,
+                floor=_rubric_floor(schema_entry, thresholds),
+            )
 
             if R_int.shape[0] == 0:
                 logger.warning(
