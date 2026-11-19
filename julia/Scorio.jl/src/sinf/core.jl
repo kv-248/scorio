@@ -41,8 +41,17 @@ function ci_from_mu_sigma(
     hi = Float64(mu) + z * sigma_f
 
     if !isnothing(clip)
-        lo = max(Float64(clip[1]), lo)
-        hi = min(Float64(clip[2]), hi)
+        length(clip) == 2 || error("clip must contain exactly two values")
+        b_lo = Float64(clip[1])
+        b_hi = Float64(clip[2])
+        if b_lo > b_hi
+            error("clip must satisfy clip[1] <= clip[2]")
+        end
+        # Clip both endpoints into the requested range. Clipping only the
+        # lower endpoint from below and the upper endpoint from above inverts
+        # the interval when the posterior mean itself lies outside the clip.
+        lo = clamp(lo, b_lo, b_hi)
+        hi = clamp(hi, b_lo, b_hi)
     end
 
     return Float64(lo), Float64(hi)

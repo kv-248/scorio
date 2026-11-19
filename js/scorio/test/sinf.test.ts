@@ -35,6 +35,23 @@ describe("fixed-look legacy API", () => {
     });
     close(cic.lo, L.ci_90_clip.lo, "ciClip/lo");
     close(cic.hi, L.ci_90_clip.hi, "ciClip/hi");
+    expect(cic.lo).toBeLessThanOrEqual(cic.hi);
+
+    expect(sinf.ciFromMuSigma(2, 0.01, { clip: [0, 1] })).toEqual({
+      lo: 1,
+      hi: 1,
+    });
+    expect(sinf.ciFromMuSigma(-1, 0.01, { clip: [0, 1] })).toEqual({
+      lo: 0,
+      hi: 0,
+    });
+    expect(sinf.ciFromMuSigma(1.5, 0, { clip: [0, 1] })).toEqual({
+      lo: 1,
+      hi: 1,
+    });
+    expect(() => sinf.ciFromMuSigma(0.5, 0.1, { clip: [1, 0] })).toThrow(
+      /clip/,
+    );
 
     expect(
       sinf.shouldStop(0.01, { confidence: 0.95, maxHalfWidth: 0.02 }),

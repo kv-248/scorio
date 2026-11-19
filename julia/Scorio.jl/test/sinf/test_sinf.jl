@@ -69,6 +69,22 @@ using Scorio
             lo, hi = Scorio.SInf.ci_from_mu_sigma(0.05, 0.1, 0.95, (0.0, 1.0))
             @test lo >= 0.0
             @test hi <= 1.0
+            @test lo <= hi
+        end
+
+        @testset "clip cannot invert when the mean is outside the range" begin
+            lo, hi = Scorio.SInf.ci_from_mu_sigma(2.0, 0.01, 0.95, (0.0, 1.0))
+            @test lo ≈ 1.0 atol = 1e-12
+            @test hi ≈ 1.0 atol = 1e-12
+            lo, hi = Scorio.SInf.ci_from_mu_sigma(-1.0, 0.01, 0.95, (0.0, 1.0))
+            @test lo ≈ 0.0 atol = 1e-12
+            @test hi ≈ 0.0 atol = 1e-12
+            lo, hi = Scorio.SInf.ci_from_mu_sigma(1.5, 0.0, 0.95, (0.0, 1.0))
+            @test lo ≈ 1.0 atol = 1e-12
+            @test hi ≈ 1.0 atol = 1e-12
+            @test_throws ErrorException Scorio.SInf.ci_from_mu_sigma(
+                0.5, 0.1, 0.95, (1.0, 0.0)
+            )
         end
 
         @testset "zero sigma gives point interval" begin

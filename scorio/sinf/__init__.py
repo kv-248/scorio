@@ -69,10 +69,12 @@ def ci_from_mu_sigma(
         mu: Posterior mean.
         sigma: Posterior standard deviation.
         confidence: Central credibility level in ``(0, 1)``.
-        clip: Optional ``(lo, hi)`` bounds applied to the returned interval.
+        clip: Optional ``(lo, hi)`` bounds. Each endpoint is clipped into
+            this range, so the returned interval stays ordered when ``mu``
+            lies outside it.
 
     Returns:
-        Interval bounds ``(lo, hi)``.
+        Interval bounds ``(lo, hi)`` with ``lo <= hi``.
     """
     if not (0.0 < confidence < 1.0):
         raise ValueError("confidence must be in (0, 1).")
@@ -82,8 +84,14 @@ def ci_from_mu_sigma(
     lo = mu - z * sigma
     hi = mu + z * sigma
     if clip is not None:
-        lo = max(clip[0], lo)
-        hi = min(clip[1], hi)
+        b_lo, b_hi = clip
+        if b_lo > b_hi:
+            raise ValueError("clip must satisfy clip[0] <= clip[1]")
+        # Clip both endpoints into the requested range. Clipping only the
+        # lower endpoint from below and the upper endpoint from above inverts
+        # the interval when the posterior mean itself lies outside the clip.
+        lo = min(max(lo, b_lo), b_hi)
+        hi = min(max(hi, b_lo), b_hi)
     return float(lo), float(hi)
 
 

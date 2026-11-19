@@ -3,6 +3,17 @@ Changelog
 
 All notable changes to this project will be documented in this file.
 
+Unreleased
+----------
+
+Fixed
+~~~~~
+
+- ``sinf.ci_from_mu_sigma`` (Python, Julia, and JavaScript/TypeScript) keeps a
+  clipped credible interval ordered when the posterior mean lies outside the
+  requested bounds. Both endpoints are clipped into the range, matching
+  ``normal_credible_interval``.
+
 Version 0.2.4 (2026-11-09)
 --------------------------
 

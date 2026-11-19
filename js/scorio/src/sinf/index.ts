@@ -6,6 +6,7 @@
  *
  * @module sinf
  */
+import { normalCredibleInterval } from "../eval/internal/ci.js";
 import { ndtri } from "../eval/internal/math.js";
 import { normCdf } from "../rank/internal/special.js";
 
@@ -27,7 +28,11 @@ export function rankingConfidence(
   const z = Math.abs(muA - muB) / denominator;
   return { rho: normCdf(z), z };
 }
-/** Build a two-sided normal interval, optionally clipped to a score range. */
+/**
+ * Build a two-sided normal interval, optionally clipped to a score range.
+ * Both endpoints are clipped into the range, so the interval stays ordered
+ * when the mean lies outside it.
+ */
 export function ciFromMuSigma(
   mu: number,
   sigma: number,
@@ -36,11 +41,16 @@ export function ciFromMuSigma(
   const confidence = options.confidence ?? 0.95;
   if (!(confidence > 0 && confidence < 1) || sigma < 0)
     throw new Error("confidence must be in (0, 1) and sigma must be >= 0");
-  const half = ndtri(0.5 + confidence / 2) * sigma;
-  return {
-    lo: options.clip ? Math.max(options.clip[0], mu - half) : mu - half,
-    hi: options.clip ? Math.min(options.clip[1], mu + half) : mu + half,
-  };
+  if (options.clip && options.clip[0] > options.clip[1])
+    throw new Error("clip must satisfy clip[0] <= clip[1]");
+  const [lo, hi] = normalCredibleInterval(
+    mu,
+    sigma,
+    confidence,
+    true,
+    options.clip ?? null,
+  );
+  return { lo, hi };
 }
 /**
  * Whether a normal interval is narrow enough at the chosen confidence level.
