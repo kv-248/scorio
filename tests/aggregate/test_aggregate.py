@@ -554,6 +554,23 @@ class TestInputHandling:
         with pytest.raises(ValueError):
             agg.majority_vote(np.zeros((2, 2, 2), dtype=object))
 
+    def test_tuple_labels_are_not_unpacked(self) -> None:
+        # Equal-length tuples are hashable labels, not a numeric matrix.
+        assert agg.majority_vote([(1, 2), (3, 4), (1, 2)]) == (1, 2)
+        assert agg.majority_vote([("A",), ("A",), ("B",)]) == ("A",)
+        assert agg.majority_vote([(1, 2), (3,), (1, 2)]) == (1, 2)
+
+        batch = [
+            [(1, 2), (1, 2), (3, 4)],
+            [(5, 6), (7, 8), (7, 8)],
+        ]
+        out = agg.majority_vote(batch)
+        assert out.shape == (2,)
+        assert out.tolist() == [(1, 2), (7, 8)]
+
+        assert agg.best_of_n([(1, 2), (3, 4), (1, 2)], [0.1, 0.9, 0.2]) == (3, 4)
+        assert agg.cges_vote([(1, 2), (1, 2), (3, 4)], [0.2, 0.3, 0.9]) == (3, 4)
+
     def test_batch_and_loop_agree(self) -> None:
         rng = np.random.default_rng(1)
         answers = rng.choice(list("ABC"), size=(20, 6))

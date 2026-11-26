@@ -11,6 +11,7 @@ an object array for a batch).
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
@@ -43,6 +44,62 @@ def _is_valid(a: Any) -> bool:
     return not (isinstance(a, (float, np.floating)) and math.isnan(float(a)))
 
 
+def _is_answer_row(value: Any) -> bool:
+    """Whether ``value`` is a candidate row rather than one answer label.
+
+    Lists and ndarrays are the batch-row containers used by the public
+    examples. Tuples stay atomic labels: ``np.asarray(..., dtype=object)``
+    would otherwise unpack every equal-length tuple into its own axis, so a
+    question of canonicalized answers such as ``[(1, 2), (1, 2), (3, 4)]``
+    was read as three numeric rows.
+    """
+    return isinstance(value, (list, np.ndarray))
+
+
+def _answer_matrix(answers: Any) -> tuple[np.ndarray, bool]:
+    """Return ``(Z, single)`` without unpacking tuple-valued labels."""
+    if isinstance(answers, np.ndarray):
+        if answers.ndim == 1:
+            out = np.empty((1, answers.shape[0]), dtype=object)
+            out[0, :] = list(answers)
+            return out, True
+        if answers.ndim == 2:
+            out = np.empty(answers.shape, dtype=object)
+            out[:] = answers
+            return out, False
+        raise ValueError("answers must be a 1D (N,) or 2D (M, N) array.")
+
+    if isinstance(answers, (str, bytes)) or not isinstance(answers, Sequence):
+        raise ValueError("answers must be a 1D (N,) or 2D (M, N) array.")
+
+    items = list(answers)
+    if items and all(_is_answer_row(item) for item in items):
+        rows: list[list[Any]] = []
+        width: int | None = None
+        for item in items:
+            if isinstance(item, np.ndarray) and item.ndim != 1:
+                raise ValueError("answers must be a 1D (N,) or 2D (M, N) array.")
+            row = list(item)
+            if width is None:
+                width = len(row)
+            elif len(row) != width:
+                raise ValueError(
+                    "answers must be a rectangular 1D (N,) or 2D (M, N) array."
+                )
+            rows.append(row)
+        out = np.empty((len(rows), width or 0), dtype=object)
+        for index, row in enumerate(rows):
+            out[index, :] = row
+        return out, False
+
+    if any(_is_answer_row(item) for item in items):
+        raise ValueError("answers must be a 1D (N,) or 2D (M, N) array.")
+
+    out = np.empty((1, len(items)), dtype=object)
+    out[0, :] = items
+    return out, True
+
+
 def _normalize(
     answers: Any,
     scores: Any = None,
@@ -53,6 +110,8 @@ def _normalize(
 
     Args:
         answers: ``(N,)`` or ``(M, N)`` array-like of hashable answer labels.
+            Nested lists are question rows. A tuple is one label, including a
+            canonicalized expression such as ``(1, 2)``.
         scores: ``(N,)`` or ``(M, N)`` array-like of floats, or ``None``.
         require_scores: If ``True``, raise when ``scores`` is ``None``.
 
@@ -61,14 +120,7 @@ def _normalize(
         ``(M, N)`` float array (or ``None``), and ``single`` is ``True`` when the
         input was one-dimensional (one question).
     """
-    Z = np.asarray(answers, dtype=object)
-    if Z.ndim == 1:
-        Z = Z.reshape(1, -1)
-        single = True
-    elif Z.ndim == 2:
-        single = False
-    else:
-        raise ValueError("answers must be a 1D (N,) or 2D (M, N) array.")
+    Z, single = _answer_matrix(answers)
 
     _, N = Z.shape
     if N == 0:
